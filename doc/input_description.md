@@ -88,6 +88,7 @@
 | Parameters  | Types |  Description  |
 |:------------|:-----:|:--------------|
 |**i-prestress**| int | Let model equilibrate given initial state, by running model for 600 kyrs before any BC changes are allowed (0-no, 1-yes).  Temperature and stress will redistribute; topography, and mountain roots will isostatically adjust.|
+|**extra pressure**| dbl | extra pressure (GPa) to support Archimed force.|
 |**itherm**| int | 1-mechanical+thermal calculation, 2-no mechenical. NOTE: usually itherm=1.|
 |**istress-therm**| int | Add thermal stress (0-no, 1-yes). |
 |**ishearh**| int | Add shear heating.|
@@ -145,6 +146,7 @@ The predefined phases are:
 15. weak middle crust, transformed from continental crust (#3, #7) if stressed and heated. Disabled.
 16. hydrated mantle, will transform (partially melt) to mantle (#4) if warmer than olivine wet solidus and generate arc (#14) at surface.
 17. metamormpic sedimentary rock, transformed from (#10)
+18. dry mantle, stronger than (#4)
 
 Phase changes are activated and will take place among certain of the defined phases.
 
@@ -173,6 +175,7 @@ Phase changes are activated and will take place among certain of the defined pha
 +  **pln**:  n for viscosity power law
 +  **acoef**: A for viscosity power law
 +  **eactiv**: E - activation energy for viscosity
++  **vactiv**: V - activation volume for viscosity
 + The non-newtonian viscosity is calculated by this equation: visc = 0.25e6 (0.75 **acoef**)^(-1/**pln**) *strain-rate*^(1/**pln** - 1) exp[ **eactiv** / (**pln** *R* (*T* + 273))]. Where *strain-rate* is the second invariant of the deviatoric strain rate, *R* is the gas constant, *T* is the temperature.
 +  **rl**:  Lame parameter: lambda
 +  **rm**:  Shear modulus: mu

@@ -116,14 +116,14 @@ include 'precision.inc'
 !$ACC     dt_elastic,demf, &
 !$ACC     dtout_screen,dtout_file,dtsave_file, &
 !$ACC     visc(maxph),den(maxph),alfa(maxph),beta(maxph),pln(maxph), &
-!$ACC     acoef(maxph),eactiv(maxph),rl(maxph),rm(maxph), &
+!$ACC     acoef(maxph),eactiv(maxph),vactiv(maxph),rl(maxph),rm(maxph), &
 !$ACC     plstrain1(maxph),plstrain2(maxph),fric1(maxph),fric2(maxph), &
 !$ACC     cohesion1(maxph),cohesion2(maxph), &
 !$ACC     dilat1(maxph),dilat2(maxph), &
 !$ACC     conduct(maxph),cp(maxph), &
 !$ACC     ts(maxph),tl(maxph),tk(maxph),fk(maxph), &
 !$ACC     ten_off,tau_heal,xinitaps(maxinh), &
-!$ACC     t_top,t_bot,hs,hr,bot_bc, &
+!$ACC     extra_pres,t_top,t_bot,hs,hr,bot_bc, &
 !$ACC     hc(maxzone_age,maxzone_layer), &
 !$ACC     age_1(maxzone_age),tp1(maxzone_age),tp2(maxzone_age), &
 !$ACC     g,pisos,drosub,damp_vis, &

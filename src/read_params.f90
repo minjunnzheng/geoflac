@@ -107,6 +107,9 @@ call AdvanceToNextInputLine(4, line)
 read(4,*,err=1000) i_prestress
 line = line + 1
 call AdvanceToNextInputLine(4, line)
+read(4,*,err=1000) extra_pres
+line = line + 1
+call AdvanceToNextInputLine(4, line)
 read(4,*,err=1000) itherm
 line = line + 1
 call AdvanceToNextInputLine(4, line)
@@ -191,8 +194,8 @@ read(4,*,err=1000) nphase
 line = line + 1
 do i = 1, nphase 
     call AdvanceToNextInputLine(4, line)
-    read(4,*,err=1000) irheol(i),visc(i),den(i),alfa(i),beta(i),pln(i),acoef(i),eactiv(i),rl(i),rm(i), &
-         plstrain1(i),plstrain2(i),fric1(i),fric2(i),cohesion1(i),cohesion2(i), &
+    read(4,*,err=1000) irheol(i),visc(i),den(i),alfa(i),beta(i),pln(i),acoef(i),eactiv(i),vactiv(i), &
+         rl(i),rm(i),plstrain1(i),plstrain2(i),fric1(i),fric2(i),cohesion1(i),cohesion2(i), &
          dilat1(i),dilat2(i), &
          conduct(i),cp(i),ts(i),tl(i),tk(i),fk(i)
     line = line + 1
