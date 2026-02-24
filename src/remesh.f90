@@ -647,51 +647,79 @@ end subroutine marker2aps
 
 
 !===============================================
-! Sharpen APS using Unsharp Masking
+! Edge-Directed Sharpening (Sobel Masked Unsharp Masking)
 !===============================================
 subroutine sharpen_aps
 use arrays
 use params
 implicit none
-integer :: i, j, n_count
+integer :: i, j
 double precision, parameter :: lambda = 1.0d0   ! sharpening strength
-double precision :: aps_blur(nz-1, nx-1)
-double precision :: s
+double precision :: aps_sobel(nz-1, nx-1)       ! Result 2
+double precision :: aps_laplace(nz-1, nx-1)     ! Result 3
+double precision :: aps_mask(nz-1, nx-1)        ! Result 4
+double precision :: sx, sy, s, max_mask
 
-! Compute blurred APS (5-point stencil average, skipping boundaries)
-do i = 1, nx-1
-    do j = 1, nz-1
-        s = 0.0d0
-        n_count = 0
+! Result 1 is the existing aps(j,i) array
 
-        s = s + aps(j,i)
-        n_count = n_count + 1
+! Initialize arrays
+aps_sobel = 0.0d0
+aps_laplace = 0.0d0
+aps_mask = 0.0d0
 
-        if (i > 1) then
-            s = s + aps(j, i-1)
-            n_count = n_count + 1
-        endif
-        if (i < nx-1) then
-            s = s + aps(j, i+1)
-            n_count = n_count + 1
-        endif
-        if (j > 1) then
-            s = s + aps(j-1, i)
-            n_count = n_count + 1
-        endif
-        if (j < nz-1) then
-            s = s + aps(j+1, i)
-            n_count = n_count + 1
-        endif
+! Step 2 & 3: Sobel (Result 2) and Laplace (Result 3)
+! We skip boundaries (i=1, nx-1, j=1, nz-1) to avoid out-of-bounds access
+do i = 2, nx-2
+    do j = 2, nz-2
+        ! Result 2: Sobel Operator 
+        ! Horizontal gradient (Sx)
+        sx = (aps(j-1,i+1) + 2.0d0*aps(j,i+1) + aps(j+1,i+1)) - &
+             (aps(j-1,i-1) + 2.0d0*aps(j,i-1) + aps(j+1,i-1))
+        ! Vertical gradient (Sy)
+        sy = (aps(j+1,i-1) + 2.0d0*aps(j+1,i) + aps(j+1,i+1)) - &
+             (aps(j-1,i-1) + 2.0d0*aps(j-1,i) + aps(j-1,i+1))
+        aps_sobel(j,i) = sqrt(sx**2 + sy**2)
 
-        aps_blur(j,i) = s / real(n_count)
+        ! Result 3: Laplace Operator (Detail)
+        ! Detail = Original - Blur (Equivalent to scaled Laplacian)
+        aps_laplace(j,i) = aps(j,i) - 0.25d0*(aps(j-1,i) + aps(j+1,i) + aps(j,i-1) + aps(j,i+1))
     enddo
 enddo
 
-! Apply Unsharp Masking: aps = aps + lambda * (aps - aps_blur)
-do i = 1, nx-1
-    do j = 1, nz-1
-        aps(j,i) = aps(j,i) + lambda * (aps(j,i) - aps_blur(j,i))
+! Step 4: Mean filter on Sobel (Result 4)
+do i = 2, nx-2
+    do j = 2, nz-2
+        ! 3x3 Arithmetic Mean Filter on Result 2
+        s = aps_sobel(j-1,i-1) + aps_sobel(j-1,i) + aps_sobel(j-1,i+1) + &
+            aps_sobel(j,i-1)   + aps_sobel(j,i)   + aps_sobel(j,i+1) + &
+            aps_sobel(j+1,i-1) + aps_sobel(j+1,i) + aps_sobel(j+1,i+1)
+        aps_mask(j,i) = s / 9.0d0
+    enddo
+enddo
+
+! Normalize Result 4 to [0, 1]
+max_mask = 0.0d0
+do i = 2, nx-2
+    do j = 2, nz-2
+        if (aps_mask(j,i) > max_mask) max_mask = aps_mask(j,i)
+    enddo
+enddo
+
+if (max_mask > 1.0d-10) then
+    do i = 2, nx-2
+        do j = 2, nz-2
+            aps_mask(j,i) = aps_mask(j,i) / max_mask
+        enddo
+    enddo
+endif
+
+! Step 5 & 6: Multiply mask with detail, and Enhance Original
+do i = 2, nx-2
+    do j = 2, nz-2
+        ! Result 5 is aps_laplace * aps_mask
+        ! Enhance: aps = aps + lambda * Result_5
+        aps(j,i) = aps(j,i) + lambda * aps_laplace(j,i) * aps_mask(j,i)
+        
         ! Clip to non-negative (APS cannot be < 0)
         if (aps(j,i) .lt. 0.0d0) aps(j,i) = 0.0d0
     enddo
