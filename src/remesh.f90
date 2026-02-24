@@ -99,8 +99,8 @@ do k = 1, 3
 end do
 
 
-! plastic strain
-call rem_interpolate( nzt, nxt, dummye, aps )
+! plastic strain (Now tracked on markers, no longer interpolated purely euilerian)
+! call rem_interpolate( nzt, nxt, dummye, aps )
 
 ! Magma fraction
 if (itype_melting == 1) then
@@ -575,5 +575,129 @@ enddo
 
 return
 end subroutine chron2marker
+
+!======================================================
+! Update marker APS from the grid changes BEFORE remeshing
+!======================================================
+subroutine aps2marker 
+use arrays
+use params
+use marker_data
+implicit none
+
+integer :: i, j, n, kk
+double precision :: aps_change
+
+do i = 1, nx-1
+    do j = 1, nz-1
+        if (nmark_elem(j,i) > 0) then
+            
+            aps_change = aps(j,i) 
+            
+            do n = 1, nmark_elem(j,i)
+                kk = mark_id_elem(n,j,i)
+                mark_aps(kk) = aps(j,i)
+            enddo
+        endif
+    enddo
+enddo
+
+return
+end subroutine aps2marker
+
+
+!======================================================
+! marker APS back to the element after remeshing
+!======================================================
+subroutine marker2aps
+use arrays
+use params
+use marker_data
+implicit none
+
+integer :: i, j, n, kk, count
+double precision :: sum_aps
+
+do i = 1, nx-1
+    do j = 1, nz-1
+        if (nmark_elem(j,i) > 0) then
+            sum_aps = 0.0d0
+            count = 0
+            do n = 1, nmark_elem(j,i)
+                kk = mark_id_elem(n,j,i)
+                if (mark_aps(kk) >= 0.0d0) then
+                    sum_aps = sum_aps + mark_aps(kk)
+                    count = count + 1
+                endif
+            enddo
+            
+            if (count > 0) then
+                aps(j,i) = sum_aps / count
+            else
+                aps(j,i) = 0.0d0
+            endif
+        else
+            aps(j,i) = 0.0d0
+        endif
+    enddo
+enddo
+
+return
+end subroutine marker2aps
+
+
+!===============================================
+! Sharpen APS using Unsharp Masking
+!===============================================
+subroutine sharpen_aps
+use arrays
+use params
+implicit none
+integer :: i, j, n_count
+double precision, parameter :: lambda = 1.0d0   ! sharpening strength
+double precision :: aps_blur(nz-1, nx-1)
+double precision :: s
+
+! Compute blurred APS (5-point stencil average, skipping boundaries)
+do i = 1, nx-1
+    do j = 1, nz-1
+        s = 0.0d0
+        n_count = 0
+
+        s = s + aps(j,i)
+        n_count = n_count + 1
+
+        if (i > 1) then
+            s = s + aps(j, i-1)
+            n_count = n_count + 1
+        endif
+        if (i < nx-1) then
+            s = s + aps(j, i+1)
+            n_count = n_count + 1
+        endif
+        if (j > 1) then
+            s = s + aps(j-1, i)
+            n_count = n_count + 1
+        endif
+        if (j < nz-1) then
+            s = s + aps(j+1, i)
+            n_count = n_count + 1
+        endif
+
+        aps_blur(j,i) = s / real(n_count)
+    enddo
+enddo
+
+! Apply Unsharp Masking: aps = aps + lambda * (aps - aps_blur)
+do i = 1, nx-1
+    do j = 1, nz-1
+        aps(j,i) = aps(j,i) + lambda * (aps(j,i) - aps_blur(j,i))
+        ! Clip to non-negative (APS cannot be < 0)
+        if (aps(j,i) .lt. 0.0d0) aps(j,i) = 0.0d0
+    enddo
+enddo
+
+return
+end subroutine sharpen_aps
 
 

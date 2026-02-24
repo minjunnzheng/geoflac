@@ -12,6 +12,7 @@ MODULE marker_data
   integer, allocatable :: mark_ntriag(:)      ! number of FE-triangle
   integer, allocatable :: mark_phase(:)
   integer, allocatable :: mark_ID(:)          ! unique ID-number
+  double precision, allocatable :: mark_aps(:) ! accumulated plastic strain
 
   integer, allocatable :: mark_id_elem(:,:,:), nmark_elem(:,:)
   
@@ -41,7 +42,8 @@ MODULE marker_data
              mark_dead(max_markers), &
              mark_ntriag(max_markers), &
              mark_phase(max_markers), &
-             mark_ID(max_markers))
+             mark_ID(max_markers), &
+             mark_aps(max_markers))
 
     allocate(mark_temp(max_markers), &
              mark_tempmax(max_markers), &
@@ -110,6 +112,7 @@ MODULE marker_data
     mark_age(kk) = age
     mark_ntriag(kk) = ntr
     mark_phase(kk) = iph
+    mark_aps(kk) = aps(j, i)   ! inherit aps from the element grid
    
     if (ithermochron > 0) then
         call temp2marker(kk)

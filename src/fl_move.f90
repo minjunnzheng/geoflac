@@ -176,11 +176,23 @@ if( topo_kappa .gt. 0.d0 ) then
 
     !$ACC wait(2)
 
-    ! !$ACC parallel loop async(1)
-    ! do i = 1, nx-1
-    !     ! higher erosion for sediments above mean topo
-    !     if (iphase(1,i) == ksed2 .and. cord(1,i,2) > topomean) stmpn(i) = stmpn(i) * 10
-    ! enddo
+    ! --- Asymmetric Erosion (Orographic Effect) ---
+    ! 1. Find the topographic high point (topo_max_idx)
+    topo_max = -1.d30
+    topo_max_idx = 1
+    do i = 1, nx
+        if (cord(1, i, 2) > topo_max) then
+            topo_max = cord(1, i, 2)
+            topo_max_idx = i
+        endif
+    enddo
+
+    ! 2. Apply higher erosion coefficient (topo_kappa) to the left side (windward)
+    !$ACC parallel loop async(1)
+    do i = 1, topo_max_idx
+        stmpn(i) = stmpn(i) * 15.0d0  ! 15x higher erosion rate on windward side
+    enddo
+    ! ----------------------------------------------
 
 
     !$ACC parallel loop async(1)
@@ -190,6 +202,11 @@ if( topo_kappa .gt. 0.d0 ) then
             stmpn(i-1)*(cord(1,i  ,2)-cord(1,i-1,2))/(cord(1,i  ,1)-cord(1,i-1,1)) ) / &
             (cord(1,i+1,1)-cord(1,i-1,1))
         dtopo(i) = dt * snder
+
+        ! --- Remove sediments on windward side ---
+        if (i <= topo_max_idx .and. dtopo(i) > 0.0d0) then
+            dtopo(i) = 0.0d0
+        endif
     end do
 
     !$ACC serial async(1)

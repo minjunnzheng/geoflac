@@ -93,9 +93,12 @@ do while( time .le. time_max )
     if( need_remeshing .ne. 0 ) then
       ! If there are markers recalculate their x,y global coordinate and assign them aps, eII, press, temp
       call bar2euler
+      call aps2marker
       call remesh
       ! If markers are present recalculate a1,a2 local coordinates and assign elements with phase ratio vector
       call lpeuler2bar
+      call marker2aps
+      call sharpen_aps
       !$ACC parallel async(1)
       call marker2elem
       !$ACC end parallel
