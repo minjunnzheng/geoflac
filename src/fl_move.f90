@@ -24,7 +24,6 @@ enddo
 !$OMP end do
 !$OMP end parallel
 
-! Diffuse topography
 if( topo_kappa.gt.0.d0) call diff_topo
 
 
@@ -160,12 +159,25 @@ use params
 use phases
 include 'precision.inc'
 
+
+real*8, parameter :: sed_kappa  = 100.0d0   ! Ks:       submarine diffusion coeff. [m^2/yr]
+real*8, parameter :: sed_lambda = 1.0d-3    ! lambda_s: diffusion decay coeff.     [1/m]
+real*8, parameter :: sea_level  = 0.0d0     ! reference sea level elevation         [m]
+real*8 :: hw
+
 !EROSION PROCESSES
-if( topo_kappa .gt. 0.d0 ) then
+if( topo_kappa .gt. 0.d0 .or. sed_kappa .gt. 0.d0 ) then
 
     !$ACC parallel loop async(2)
     do i = 1, nx
-        stmpn(i) = topo_kappa ! elevation-dep. topo diffusivity
+        hw = sea_level - cord(1,i,2)   ! water depth (> 0 when submerged)
+        if (hw .gt. 0.d0) then
+            ! SUBMARINE SEDIMENT TRANSPORT (Kaufman et al. 1991, Eq.15)
+            stmpn(i) = sed_kappa * exp(-sed_lambda * hw)
+        else
+            ! SUBAERIAL HILLSLOPE DIFFUSION
+            stmpn(i) = topo_kappa
+        endif
     enddo
 
     topomean = 0
@@ -241,7 +253,7 @@ if (arc_extrusion_rate > 0) then
 endif
 
 ! adjust markers
-if (topo_kappa > 0 .or. arc_extrusion_rate > 0) then
+if (topo_kappa > 0 .or. sed_kappa > 0 .or. arc_extrusion_rate > 0) then
     if(mod(nloop, ifreq_avgsr) .eq. 0) then
 !!$        print *, 'max sed/erosion rate (m/yr):' &
 !!$             , maxval(dtopo(1:nx)) * 3.16d7 / dt &
