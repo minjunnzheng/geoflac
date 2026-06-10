@@ -160,12 +160,35 @@ use params
 use phases
 include 'precision.inc'
 
+! Southern Alps asymmetric erosion mode
+integer :: i_divide
+double precision :: topomax
+double precision, parameter :: asymm_ratio = 5.0d0
+
 !EROSION PROCESSES
 if( topo_kappa .gt. 0.d0 ) then
 
+    ! Find topographic divide (highest surface point), recomputed each step
+    !$ACC serial async(2)
+    i_divide = 1
+    topomax = cord(1,1,2)
+    do i = 2, nx
+        if (cord(1,i,2) > topomax) then
+            topomax = cord(1,i,2)
+            i_divide = i
+        endif
+    end do
+    !$ACC end serial
+
+    ! Asymmetric topo_kappa: windward (left/west) erodes asymm_ratio x leeward (right/east)
+    ! Models Southern Alps rainshadow (Willett 1999): wet west side, dry east side
     !$ACC parallel loop async(2)
     do i = 1, nx
-        stmpn(i) = topo_kappa ! elevation-dep. topo diffusivity
+        if (i <= i_divide) then
+            stmpn(i) = topo_kappa                ! windward (west, high precip)
+        else
+            stmpn(i) = topo_kappa / asymm_ratio  ! leeward (east, rainshadow)
+        endif
     enddo
 
     topomean = 0
@@ -199,8 +222,10 @@ if( topo_kappa .gt. 0.d0 ) then
 
     !$ACC parallel loop async(1)
     do i = 1, nx
-        ! erosion cannot erode over 0.5x element height
-        dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
+        ! southernAlps mode: no deposition allowed (eroded mass exported to Pacific)
+        dtopo(i) = min(dtopo(i), 0.0d0)
+        ! erosion cannot exceed 0.5x element height per step
+        dtopo(i) = max(dtopo(i), -0.5d0*(cord(1,i,2)-cord(2,i,2)))
     enddo
 
     ! accumulated topo change since last resurface
