@@ -199,8 +199,10 @@ if( topo_kappa .gt. 0.d0 ) then
 
     !$ACC parallel loop async(1)
     do i = 1, nx
-        ! erosion cannot erode over 0.5x element height
-        dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
+        ! no deposition allowed (eroded mass exported out of model)
+        dtopo(i) = min(dtopo(i), 0.0d0)
+        ! erosion cannot exceed 0.5x element height per step
+        dtopo(i) = max(dtopo(i), -0.5d0*(cord(1,i,2)-cord(2,i,2)))
     enddo
 
     ! accumulated topo change since last resurface
