@@ -55,6 +55,8 @@ gprof = 0
 
 ## for GNU gfortran >= 5
 ifeq ($(F90), gfortran)
+	# allow long free-form lines (older gfortran, e.g. 6.x, errors at 132 cols)
+	CFLAGS += -ffree-line-length-none
 	ifeq ($(omp), 1)
 		CFLAGS += -fopenmp
 		LDFLAGS += -fopenmp
