@@ -157,11 +157,23 @@ if( topo_kappa .gt. 0.d0 ) then
 
     !$ACC wait(2)
 
-    ! !$ACC parallel loop async(1)
-    ! do i = 1, nx-1
-    !     ! higher erosion for sediments above mean topo
-    !     if (iphase(1,i) == ksed1 .and. cord(1,i,2) > topomean) stmpn(i) = stmpn(i) * 10
-    ! enddo
+    ! Southern Alps orographic asymmetry (from geoflac-salpine):
+    ! 1. Find the topographic high point (divide)
+    topo_max = -1.d30
+    topo_max_idx = 1
+    do i = 1, nx
+        if (cord(1, i, 2) > topo_max) then
+            topo_max = cord(1, i, 2)
+            topo_max_idx = i
+        endif
+    enddo
+
+    ! 2. Windward side (west, up to divide) erodes 10x stronger than leeward (rainshadow)
+    !$ACC parallel loop async(1)
+    do i = 1, topo_max_idx
+        stmpn(i) = stmpn(i) * 10.0d0
+    enddo
+    ! ----------------------------------------------
 
 
     !$ACC parallel loop async(1)
@@ -180,8 +192,10 @@ if( topo_kappa .gt. 0.d0 ) then
 
     !$ACC parallel loop async(1)
     do i = 1, nx
-        ! erosion cannot erode over 0.5x element height
-        dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
+        ! orogen mode: no deposition allowed (eroded mass exported out of model)
+        dtopo(i) = min(dtopo(i), 0.0d0)
+        ! erosion cannot exceed 0.5x element height per step
+        dtopo(i) = max(dtopo(i), -0.5d0*(cord(1,i,2)-cord(2,i,2)))
     enddo
 
     ! accumulated topo change since last resurface
