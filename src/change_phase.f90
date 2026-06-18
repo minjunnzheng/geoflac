@@ -164,15 +164,18 @@ do kk = 1 , nmarkers
         !$OMP atomic write
         itmp(j,i) = 1
         mark_phase(kk) = kschist
-    case (khydmant)
-        ! dehydration of chlorite
-        ! Phase diagram from Grove et al. Nature, 2009
-        trtmpr = 880 - 35d-9 * (depth - 62d3)**2
-        if (tmpr < trtmpr) cycle
-        !$ACC atomic write
-        !$OMP atomic write
-        itmp(j,i) = 1
-        mark_phase(kk) = kmant1
+    ! Disabled: in this model phase 16 (khydmant slot) is repurposed as
+    ! "ultra schist", so the chlorite-dehydration transform to mantle must
+    ! not fire. Current setup never reaches this T, but block it explicitly.
+    !case (khydmant)
+    !    ! dehydration of chlorite
+    !    ! Phase diagram from Grove et al. Nature, 2009
+    !    trtmpr = 880 - 35d-9 * (depth - 62d3)**2
+    !    if (tmpr < trtmpr) cycle
+    !    !$ACC atomic write
+    !    !$OMP atomic write
+    !    itmp(j,i) = 1
+    !    mark_phase(kk) = kmant1
     end select
 
 enddo
