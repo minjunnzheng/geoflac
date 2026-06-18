@@ -20,7 +20,7 @@ module arrays
       strainr(:,:,:,:), flux(:,:,:,:), &
       aps(:,:),visn(:,:),e2sr(:,:), &
       temp0(:,:),source(:,:),shrheat(:,:), &
-      bcstress(:,:), &
+      bcstress(:,:), q_init(:), &
       chron_temp(:,:,:), chron_time(:,:,:), max_temp(:,:)
   integer, allocatable :: chron_if(:,:,:)
 
@@ -95,6 +95,7 @@ contains
     allocate(dummye(nz-1, nx-1))
     allocate(stmpn(max(nx,nz)))
     allocate(itmp(nz, nx))
+    allocate(q_init(nx))
 
     if (ithermochron > 0) then
         allocate(max_temp(nz, nx))
