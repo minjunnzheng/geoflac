@@ -8,7 +8,7 @@ function Eff_dens( j, i)
   include 'precision.inc'
 
   ! Adiabatic gradient
-  adi_grad = 3.d-1
+  adi_grad = 0.d0   ! disabled to match old flac-thermochron-tw initial state
   ! Density transition thickness
   den_ramp_dist = 30.d3
   ! Density enhancement (in percentage) from the upper mantle to the transition zone
@@ -134,7 +134,7 @@ use params
 include 'precision.inc'
 
 ! Adiabatic gradient
-adi_grad = 3.d-1
+adi_grad = 0.d0   ! disabled to match old flac-thermochron-tw initial state
 
 do k = 1, inhom
     !Fixed weak zone
