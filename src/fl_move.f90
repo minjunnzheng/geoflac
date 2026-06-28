@@ -202,6 +202,23 @@ if( topo_kappa .gt. 0.d0 ) then
         ! erosion cannot erode over 0.5x element height
         dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
     enddo
+    ! --- TW lithology-dependent uplift erosion (ported from flac-thermochron-tw) ---
+    ! Erosion proportional to surface elevation, rate set by surface-element phase.
+    !   ert: other=7, ph13=5, ph14/15=2, ph16/17=2 ;  3.17e-11 m/s ~ 1 mm/yr
+    !$ACC parallel loop private(iph, ert) async(1)
+    do i = 1, nx
+        iph = iphase(1,i)
+        if (iph == 16 .or. iph == 17) then
+            ert = 2.d0
+        else if (iph == 14 .or. iph == 15) then
+            ert = 2.d0
+        else if (iph == 13) then
+            ert = 5.d0
+        else
+            ert = 7.d0
+        endif
+        dtopo(i) = dtopo(i) - cord(1,i,2) * 3.17d-11 * 1.d-3 * ert * dt
+    enddo
 
     ! accumulated topo change since last resurface
     !$ACC wait(1)
