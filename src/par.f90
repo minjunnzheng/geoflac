@@ -96,10 +96,8 @@ do while( time .le. time_max )
       call remesh
       ! If markers are present recalculate a1,a2 local coordinates and assign elements with phase ratio vector
       call lpeuler2bar
-      !$ACC parallel async(1)
+      !$ACC wait(1)
       call marker2elem
-      !$ACC end parallel
-      !$ACC update self(nmarkers) async(1)
     endif
   endif
 

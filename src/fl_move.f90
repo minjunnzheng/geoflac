@@ -274,16 +274,14 @@ end subroutine diff_topo
 
 
 subroutine resurface
-  !$ACC routine(bar2xy) seq
-  !$ACC routine(shape_functions) seq
-  !$ACC routine(add_marker_at_top) seq
+  ! host routine (marker management): runs on CPU, GPU compute synced via managed memory
   use marker_data
   use arrays
   use params
   use phases
   include 'precision.inc'
 
-  !$ACC serial private(dz_ratio) async(1)
+  !$ACC wait(1)
   do i = 1, nx-1
       ! averge thickness of this element
       elz = 0.5d0 * (cord(1,i,2) - cord(2,i,2) + cord(1,i+1,2) - cord(2,i+1,2))
@@ -375,15 +373,13 @@ subroutine resurface
             call count_phase_ratio(1,i)
       endif
   end do
-  !$ACC end serial
-  !$ACC update self(nmarkers) async(1)
+  ! (host marker loop end)
 
 end subroutine resurface
 
 
 subroutine add_marker_at_top(i, dz_ratio, time, loop, kph)
-  !$ACC routine seq
-  !$ACC routine(add_marker) seq
+  ! host routine (called from resurface on CPU)
   use myrandom_mod
   use marker_data
   use arrays

@@ -1,4 +1,5 @@
 subroutine temp2marker(kk)
+!$ACC routine seq
 use marker_data
 use arrays
 use params
@@ -30,7 +31,7 @@ integer :: n, k, j, i
     tt(3) = temp(j+1,i+1)
   endif
 
-  t_temp = sum(tt*bar)
+  t_temp = tt(1)*bar(1) + tt(2)*bar(2) + tt(3)*bar(3)
 
   ! record the max temperature the rock have been
   if (t_temp .gt. mark_tempmax(kk)) mark_tempmax(kk) = t_temp

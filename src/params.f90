@@ -124,5 +124,6 @@ character phasefile*20,tempfile*20,coordfile*20
 character chron_file*20, chron_name(10)*20
 real*8 :: unreset_time, chron_ref(10,50,2)
 integer :: ithermochron, iwait, nchron_fpair(10), nchron
+!$ACC declare create(iwait,nchron,nchron_fpair,chron_ref,unreset_time)
 
 end module params

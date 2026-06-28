@@ -58,8 +58,8 @@ MODULE marker_data
 
 
   subroutine add_marker(x, y, iph, age, j, i, inc)
-    !$ACC routine seq
-    !$ACC routine(check_inside) seq
+    ! NOTE: host-only routine (called from host marker-management loops with
+    ! exit/cycle/stop); not a device routine. ACC routine directive removed for GPU build.
     
     use arrays
     use params

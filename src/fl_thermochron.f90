@@ -10,10 +10,11 @@ use marker_data
 use params
 implicit none
 
+!$ACC routine(temp2marker) seq
 character :: screen*200
-integer :: kk, i, i_closure_if
+integer :: kk, i, i_closure_if, nfp, kc
 double precision :: t_temp, t_rate, t_closure, delta_temp, sterr
-double precision :: t_temp_last
+double precision :: t_temp_last, trate_abs, rr1, rr2, cc1, cc2
 
 sterr = 0.d-4
 !12 format(1I10,5F15.7)
@@ -28,6 +29,7 @@ if (i_prestress .eq. 1 ) return
 
 ! Update present temperature on marker
 !$OMP Parallel do default(none) shared(nmarkers,mark_dead) private(kk)
+!$ACC parallel loop async(1)
 do kk = 1, nmarkers
   if (mark_dead(kk).eq.0) cycle
   call temp2marker(kk)
@@ -48,6 +50,7 @@ do i = 1, nchron
 !$OMP                           mark_chron_temp,mark_chron_time, &
 !$OMP                           chron_ref,time,dt,i,nloop, &
 !$OMP                           sterr,nmarkers,nchron_fpair)
+!$ACC parallel loop async(1)
 ! calculate if closure and assign age
     do kk = 1, nmarkers
       if (mark_dead(kk).eq.0) cycle
@@ -59,7 +62,23 @@ do i = 1, nchron
       t_rate = mark_cooling_rate(kk)
       ! find the closure temperature of t_rate
       if(t_rate .lt. 0.d0)then
-        call interpolate_closure(-1.d0*t_rate,t_closure,i)
+        ! inlined closure-temp interpolation (linear scan; device-friendly)
+        trate_abs = -1.d0*t_rate
+        nfp = nchron_fpair(i)
+        if (trate_abs <= chron_ref(i,1,1)) then
+          t_closure = chron_ref(i,1,2)
+        else if (trate_abs >= chron_ref(i,nfp,1)) then
+          t_closure = chron_ref(i,nfp,2)
+        else
+          t_closure = chron_ref(i,nfp,2)
+          do kc = 1, nfp-1
+            rr1 = chron_ref(i,kc,1); rr2 = chron_ref(i,kc+1,1)
+            if (trate_abs >= rr1 .and. trate_abs < rr2) then
+              cc1 = chron_ref(i,kc,2); cc2 = chron_ref(i,kc+1,2)
+              t_closure = cc1 + (trate_abs-rr1)*(cc2-cc1)/(rr2-rr1)
+            end if
+          end do
+        end if
       else
         t_closure = chron_ref(i,1,2)
       end if
@@ -93,46 +112,3 @@ end do
 return
 end subroutine fl_thermchron
 
-
-subroutine interpolate_closure(t_rate,t_closure,i_ref)
-use params
-implicit none
-
-double precision :: t_rate, t_closure
-integer :: i_ref
-
-integer :: low, high, mid
-double precision :: r_low, r_high, c_low, c_high
-
-low = 1
-high = nchron_fpair(i_ref)
-
-! Boundary checks (Assuming rates are sorted ascendingly)
-if (t_rate <= chron_ref(i_ref, low, 1)) then
-    t_closure = chron_ref(i_ref, low, 2)
-    return
-elseif (t_rate >= chron_ref(i_ref, high, 1)) then
-    t_closure = chron_ref(i_ref, high, 2)
-    return
-endif
-
-! Binary search
-do while (high - low > 1)
-    mid = (low + high) / 2
-    if (chron_ref(i_ref, mid, 1) > t_rate) then
-        high = mid
-    else
-        low = mid
-    endif
-end do
-
-! Linear Interpolation
-r_low = chron_ref(i_ref, low, 1)
-r_high = chron_ref(i_ref, high, 1)
-c_low = chron_ref(i_ref, low, 2)
-c_high = chron_ref(i_ref, high, 2)
-
-t_closure = c_low + (t_rate - r_low) * (c_high - c_low) / (r_high - r_low)
-
-return
-end subroutine interpolate_closure
