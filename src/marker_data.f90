@@ -118,17 +118,16 @@ MODULE marker_data
         mark_tempmax(kk) = -1000.0d0
 
         ! Inherit thermochron state directly from element grid arrays
-        if (i > 1 .and. i < nx-1) then
-            mark_chron_time(:, kk) = chron_time(:, j, i)
-            mark_chron_temp(:, kk) = chron_temp(:, j, i)
-            mark_chron_if(:, kk)   = chron_if(:, j, i)
-        else
-            mark_chron_time(:, kk) = unreset_time
-            mark_chron_temp(:, kk) = 0.0d0
-            mark_chron_if(:, kk)   = 1
-        endif
-
         do n = 1, nchron
+            if (i > 1 .and. i < nx-1) then
+                mark_chron_time(n, kk) = chron_time(n, j, i)
+                mark_chron_temp(n, kk) = chron_temp(n, j, i)
+                mark_chron_if(n, kk)   = chron_if(n, j, i)
+            else
+                mark_chron_time(n, kk) = unreset_time
+                mark_chron_temp(n, kk) = 0.0d0
+                mark_chron_if(n, kk)   = 1
+            endif
             t_closure = chron_ref(n, 1, 2)
             if (mark_temp(kk) .gt. t_closure) then
                 mark_chron_if(n, kk) = 0
