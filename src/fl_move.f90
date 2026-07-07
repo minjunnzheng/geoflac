@@ -108,13 +108,13 @@ do  i = 1,nx-1
         enddo
 
         if (any(area(j,i,:) <= 0)) then
-            ! write(333, *) 'area', j, i, nloop
-            ! write(333, *) area(j,i,:)
-            ! write(333, *) 'cord:'
-            ! write(333, *) cord(j  ,i  ,:)
-            ! write(333, *) cord(j  ,i+1,:)
-            ! write(333, *) cord(j+1,i  ,:)
-            ! write(333, *) cord(j+1,i+1,:)
+             write(333, *) 'area', j, i, nloop
+             write(333, *) area(j,i,:)
+             write(333, *) 'cord:'
+             write(333, *) cord(j  ,i  ,:)
+             write(333, *) cord(j  ,i+1,:)
+             write(333, *) cord(j+1,i  ,:)
+             write(333, *) cord(j+1,i+1,:)
             ! write(333, *) 'vel:'
             ! write(333, *) vel(j  ,i  ,:)
             ! write(333, *) vel(j  ,i+1,:)
