@@ -140,6 +140,29 @@ use arrays
 use params
 use phases
 include 'precision.inc'
+integer :: iph, ios_ero
+double precision :: ert
+double precision, save :: ert_scale = -1.d0
+double precision, save :: ert_tab(4) = (/7.d0, 5.d0, 2.d0, 2.d0/)
+
+! optional per-run lithology-erosion control, file 'erosion_params.dat':
+!   EITHER one line with 4 values -> full ert table (other, ph13, ph14/15, ph16/17)
+!   OR     one line with 1 value  -> global scale on the default table
+if (ert_scale < 0.d0) then
+    ert_scale = 1.d0
+    open(unit=347, file='erosion_params.dat', status='old', iostat=ios_ero)
+    if (ios_ero == 0) then
+        read(347,*,iostat=ios_ero) ert_tab(1), ert_tab(2), ert_tab(3), ert_tab(4)
+        if (ios_ero /= 0) then
+            ert_tab = (/7.d0, 5.d0, 2.d0, 2.d0/)
+            rewind(347)
+            read(347,*,iostat=ios_ero) ert_scale
+            if (ios_ero /= 0) ert_scale = 1.d0
+        endif
+        close(347)
+        write(6,*) 'TW lithology erosion: ert_tab=', ert_tab, ' scale=', ert_scale
+    endif
+endif
 
 !EROSION PROCESSES
 if( topo_kappa .gt. 0.d0 ) then
@@ -182,6 +205,25 @@ if( topo_kappa .gt. 0.d0 ) then
     do i = 1, nx
         ! erosion cannot erode over 0.5x element height
         dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
+    enddo
+
+    ! --- TW lithology-dependent uplift erosion (ported from flac-thermochron-tw
+    !     via geoflac-tw 048cdd0). Removal proportional to surface elevation,
+    !     rate set by surface-element phase. 3.17e-11 m/s ~ 1 mm/yr.
+    !     ert: other=7, ph13=5, ph14/15=2, ph16/17=2 (x ert_scale) ---
+    !$ACC parallel loop private(iph, ert) async(1)
+    do i = 1, nx
+        iph = iphase(1,i)
+        if (iph == 16 .or. iph == 17) then
+            ert = ert_tab(4)
+        else if (iph == 14 .or. iph == 15) then
+            ert = ert_tab(3)
+        else if (iph == 13) then
+            ert = ert_tab(2)
+        else
+            ert = ert_tab(1)
+        endif
+        dtopo(i) = dtopo(i) - cord(1,i,2) * 3.17d-11 * 1.d-3 * ert * ert_scale * dt
     enddo
 
     ! accumulated topo change since last resurface

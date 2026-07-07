@@ -152,18 +152,18 @@ do kk = 1 , nmarkers
         !$OMP atomic write
         itmp(j,i) = 1
         mark_phase(kk) = kmetased
-    case (kmetased)
-        ! dehydration, sedimentary rock -> schist
-        ! from metapelite KFMASH petrogenic grid,
-        ! invariant points i5 (710.8 C, 0.880 GPa) i3 (662.3 C, 0.704 GPa)
-        ! Fig 1, Wei, Powell, Clarke, J. Metamorph. Geol., 2004.
-        trpres = 0.88d9 - (0.88d9 - 0.704d9) * (710.8d0 - tmpr) / (710.8d0 - 662.3d0)
-        press = mantle_density * g * depth
-        if (press < trpres ) cycle
-        !$ACC atomic write
-        !$OMP atomic write
-        itmp(j,i) = 1
-        mark_phase(kk) = kschist
+!    case (kmetased)
+!        ! dehydration, sedimentary rock -> schist
+!        ! from metapelite KFMASH petrogenic grid,
+!        ! invariant points i5 (710.8 C, 0.880 GPa) i3 (662.3 C, 0.704 GPa)
+!        ! Fig 1, Wei, Powell, Clarke, J. Metamorph. Geol., 2004.
+!        trpres = 0.88d9 - (0.88d9 - 0.704d9) * (710.8d0 - tmpr) / (710.8d0 - 662.3d0)
+!        press = mantle_density * g * depth
+!        if (press < trpres ) cycle
+!        !$ACC atomic write
+!        !$OMP atomic write
+!        itmp(j,i) = 1
+!        mark_phase(kk) = kschist
     case (khydmant)
         ! dehydration of chlorite
         ! Phase diagram from Grove et al. Nature, 2009
