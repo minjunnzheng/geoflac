@@ -13,6 +13,7 @@ D_2023_02_04 = datetime(2023, 2, 4)
 D_2025_10_17 = datetime(2025, 10, 17)
 D_2026_05_27 = datetime(2026, 5, 27)
 D_2026_06_12 = datetime(2026, 6, 12)
+D_2026_07_08 = datetime(2026, 7, 8)  # orogen branch: orthogonal surface-process block
 
 def parse_date(date_str):
     for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y%m%d'):
@@ -437,6 +438,23 @@ def parse_inp(clean_lines, date):
     tokens = get_tokens('topo_kappa_fac_kappa')
     topo_kappa, fac_kappa = float(tokens[0]), float(tokens[1])
 
+    # orogen (>= 2026-07-08): orthogonal surface-process switches. Older inputs
+    # default to all-off, so the writer inserts a behaviour-preserving block.
+    if date >= D_2026_07_08:
+        tokens = get_tokens('surf_inodep_iwind')
+        inodep, iwind = int(tokens[0]), int(tokens[1])
+        wind_factor, wind_taper = float(tokens[2]), int(tokens[3])
+        tokens = get_tokens('surf_nert')
+        nert_class, ert_default = int(tokens[0]), float(tokens[1])
+        ert_classes = []
+        for k in range(nert_class):
+            tk = get_tokens(f'surf_ert_{k}')
+            ev, nph = float(tk[0]), int(tk[1])
+            ert_classes.append((ev, [int(x) for x in tk[2:2 + nph]]))
+    else:
+        inodep, iwind, wind_factor, wind_taper = 0, 0, 1.0, 0
+        nert_class, ert_default, ert_classes = 0, 0.0, []
+
     # 11. Process control
     idt_scale = int(get_tokens('idt_scale')[0])
     
@@ -529,7 +547,10 @@ def parse_inp(clean_lines, date):
         'lambda_freeze_tdep': lambda_freeze_tdep, 'weaken_ratio_plastic': weaken_ratio_plastic,
         'weaken_ratio_viscous': weaken_ratio_viscous, 'ny_rem': ny_rem, 'mode_rem': mode_rem,
         'ntest_rem': ntest_rem, 'angle_rem': angle_rem, 'dx_rem': dx_rem, 'topo_kappa': topo_kappa,
-        'fac_kappa': fac_kappa, 'idt_scale': idt_scale, 'dt_scale': dt_scale, 'tolerance': tolerance,
+        'fac_kappa': fac_kappa, 'inodep': inodep, 'iwind': iwind, 'wind_factor': wind_factor,
+        'wind_taper': wind_taper, 'nert_class': nert_class, 'ert_default': ert_default,
+        'ert_classes': ert_classes,
+        'idt_scale': idt_scale, 'dt_scale': dt_scale, 'tolerance': tolerance,
         'i_rey': i_rey, 'xReyn': xReyn, 'ifreq_rmasses': if_rmasses, 'ifreq_imasses': if_imasses,
         'ifreq_visc': if_visc, 'ifreq_avgsr': if_avgsr, 'frac_elastic': frac_elastic,
         'frac_maxwell': frac_maxwell, 'movegrid': movegrid, 'ndim': ndim, 'damping': damping,
@@ -749,6 +770,19 @@ def write_new_inp(data, comments_map, final_comments, filename):
                    default_preceding=[(False, "; dx_rem")])
         write_line('topo_kappa_fac_kappa', f"{data['topo_kappa']}  {data['fac_kappa']}",
                    default_preceding=[(False, "; topo diffusivity and amplification factor")])
+
+        # orogen orthogonal surface-process block (all-off default preserves upstream behaviour)
+        write_line('surf_inodep_iwind',
+                   f"{data['inodep']}  {data['iwind']}  {data['wind_factor']}  {data['wind_taper']}",
+                   default_preceding=[(False, "; Surface processes (ARCHITECTURE orogen)"),
+                                     (False, "; inodep(1=no deposition)  iwind(0/1=west,2=east)  wind_factor  wind_taper")])
+        write_line('surf_nert',
+                   f"{data['nert_class']}  {data['ert_default']}",
+                   default_preceding=[(False, "; lithology-dependent erosion: nert_class ert_default (0 0.0 = off)")])
+        for k, (ev, phs) in enumerate(data['ert_classes']):
+            write_line(f'surf_ert_{k}',
+                       f"{ev}  {len(phs)}  " + " ".join(str(p) for p in phs),
+                       default_preceding=[(False, "; ert_value nphase_in_class phase IDs...")] if k == 0 else None)
 
         # 8. Process control
         write_line('idt_scale', f"{data['idt_scale']}",
