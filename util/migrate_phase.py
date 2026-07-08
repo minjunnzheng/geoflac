@@ -70,8 +70,19 @@ def parse_zones(lines):
                   'tokens': [...] (old only)}."""
     i = find_section(lines, 'nzone_age')
     if i < 0 or not tokens(lines[i]):
-        i = find_section(lines, 'Initially Variable thermal age')
-        i = next_data(lines, i + 1)
+        b = find_section(lines, 'Initially Variable thermal age')
+        if b >= 0:
+            i = next_data(lines, b + 1)      # count is the data line after the banner
+        else:
+            # fallback: the ";Thermal age (Myr..." comment sits between the
+            # count and the first zone; the count is the data line before it.
+            c = find_section(lines, 'Thermal age (Myr')
+            if c < 0:
+                raise ValueError('nzone_age block not found (no known anchor)')
+            k = c - 1
+            while k >= 0 and not tokens(lines[k]):
+                k -= 1
+            i = k
     if i < 0:
         raise ValueError('nzone_age block not found')
     n = int(tokens(lines[i])[0])
