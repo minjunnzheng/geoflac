@@ -140,6 +140,9 @@ use arrays
 use params
 use phases
 include 'precision.inc'
+! explicit types: topo_max_idx would default to real*8 (starts with 't') under precision.inc
+integer :: iph, kcl, m, topo_max_idx
+double precision :: ert, topo_max, wfac
 
 !EROSION PROCESSES
 if( topo_kappa .gt. 0.d0 ) then
@@ -163,6 +166,36 @@ if( topo_kappa .gt. 0.d0 ) then
     !     if (iphase(1,i) == ksed1 .and. cord(1,i,2) > topomean) stmpn(i) = stmpn(i) * 10
     ! enddo
 
+    ! Windward-side diffusivity enhancement (ARCHITECTURE §3.6).
+    ! Dynamic divide = global topo max node; iwind=1 windward=west(left), iwind=2 windward=east(right).
+    if (iwind .ne. 0) then
+        !$ACC serial async(1)
+        topo_max = -1.d30
+        topo_max_idx = 1
+        do i = 1, nx
+            if (cord(1,i,2) > topo_max) then
+                topo_max = cord(1,i,2)
+                topo_max_idx = i
+            endif
+        enddo
+        if (iwind == 1) then
+            do i = 2, topo_max_idx
+                wfac = wind_factor
+                if (wind_taper > 0) wfac = 1.d0 + (wind_factor-1.d0) * &
+                    min(1.d0, dble(topo_max_idx-i)/dble(wind_taper))
+                stmpn(i) = stmpn(i) * wfac
+            enddo
+        else
+            do i = topo_max_idx, nx-1
+                wfac = wind_factor
+                if (wind_taper > 0) wfac = 1.d0 + (wind_factor-1.d0) * &
+                    min(1.d0, dble(i-topo_max_idx)/dble(wind_taper))
+                stmpn(i) = stmpn(i) * wfac
+            enddo
+        endif
+        !$ACC end serial
+    endif
+
 
     !$ACC parallel loop async(1)
     do i = 2, nx-1
@@ -182,7 +215,24 @@ if( topo_kappa .gt. 0.d0 ) then
     do i = 1, nx
         ! erosion cannot erode over 0.5x element height
         dtopo(i) = min(dtopo(i), 0.5*(cord(1,i,2)-cord(2,i,2)))
+        ! no-deposition switch (ARCHITECTURE §3.5): export eroded mass out of model
+        if (inodep == 1) dtopo(i) = min(dtopo(i), 0.d0)
     enddo
+
+    ! lithology-dependent erosion (ARCHITECTURE §3.5); 3.17d-11 m/s ~ 1 mm/yr, ert dimensionless
+    if (nert_class > 0) then
+        !$ACC parallel loop private(iph, ert, kcl, m) async(1)
+        do i = 1, nx
+            iph = iphase(1,i)
+            ert = ert_default
+            do kcl = 1, nert_class
+                do m = 1, nert_ph(kcl)
+                    if (iph == ert_ph(kcl,m)) ert = ert_val(kcl)
+                enddo
+            enddo
+            dtopo(i) = dtopo(i) - cord(1,i,2) * 3.17d-11 * 1.d-3 * ert * dt
+        enddo
+    endif
 
     ! accumulated topo change since last resurface
     !$ACC wait(1)

@@ -273,6 +273,58 @@ call AdvanceToNextInputLine(4, line)
 read(4,*,err=1000)  topo_kappa, fac_kappa
 line = line + 1
 
+! Surface processes: orthogonal switches (ARCHITECTURE §3.5)
+! inodep(1=no deposition)  iwind(0/1=windward left/west,2=right/east)  wind_factor  wind_taper
+call AdvanceToNextInputLine(4, line)
+read(4,*,err=1000) inodep, iwind, wind_factor, wind_taper
+line = line + 1
+! lithology-dependent erosion:  nert_class  ert_default   (0  0.0 = off)
+call AdvanceToNextInputLine(4, line)
+read(4,*,err=1000) nert_class, ert_default
+line = line + 1
+if (iwind < 0 .or. iwind > 2) then
+    call SysMsg('read_params: iwind must be 0, 1, or 2')
+    stop
+endif
+if (nert_class < 0 .or. nert_class > 10) then
+    call SysMsg('read_params: nert_class must be 0..10')
+    stop
+endif
+do k = 1, nert_class
+    call AdvanceToNextInputLine(4, line)
+    ! per class:  ert_value  nphase_in_class  phase IDs...
+    read(4,*,err=1000) ert_val(k), nert_ph(k), (ert_ph(k,m), m=1,nert_ph(k))
+    line = line + 1
+    if (nert_ph(k) < 1 .or. nert_ph(k) > 10) then
+        call SysMsg('read_params: nphase_in_class (nert_ph) must be 1..10')
+        stop
+    endif
+enddo
+
+! preflight: echo effective surface-process values (ARCHITECTURE §3.8)
+write(6,*) 'Surface: kappa=',topo_kappa,' inodep=',inodep,' iwind=',iwind, &
+    ' wf=',wind_factor,' taper=',wind_taper,' nert=',nert_class,' ert0=',ert_default
+do k = 1, nert_class
+    write(6,*) '  ert class',k,': ert=',ert_val(k),' phases=',(ert_ph(k,m),m=1,nert_ph(k))
+enddo
+
+! WARNING (non-fatal): phases 16/17 carry built-in change_phase rules (khydmant/kmetased).
+! Static-lithology use must be migrated to orogeny phases 20-24 (ARCHITECTURE §3.4).
+do i = 1, nzone_age
+    do j = 1, nph_layer(i)
+        if (iph_col(i,j) == 16 .or. iph_col(i,j) == 17) then
+            write(6,*) 'WARNING: nzone_age zone',i,' uses phase',iph_col(i,j), &
+                ' which has a built-in change_phase rule - MIGRATE to orogeny phase 20-24'
+        endif
+    enddo
+enddo
+do i = 1, inhom
+    if (inphase(i) == 16 .or. inphase(i) == 17) then
+        write(6,*) 'WARNING: inhom',i,' uses phase',inphase(i), &
+            ' which has a built-in change_phase rule - MIGRATE to orogeny phase 20-24'
+    endif
+enddo
+
 
 ! PROCESS CONTROL
 ! inertial mass scaling
