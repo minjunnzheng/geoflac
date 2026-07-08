@@ -140,7 +140,8 @@ if(incoming_left==1) then
         !$ACC serial async(1)
         ju = jl
         do j = jl, nz-1
-            if((cord(1,i,2) - 0.5d0*(cord(j,i,2)+cord(j+1,i,2))) > hc(n,m)*1d3) then
+            ! basin guard (ARCHITECTURE §3.7): surface>0 uses surface-relative depth, <=0 falls back to absolute
+            if((max(cord(1,i,2),0.d0) - 0.5d0*(cord(j,i,2)+cord(j+1,i,2))) > hc(n,m)*1d3) then
                 jl = j
                 exit
             endif
@@ -168,7 +169,8 @@ if(incoming_right==1) then
         !$ACC serial async(1)
         ju = jl
         do j = jl, nz-1
-            if((cord(1,i+1,2) - 0.5d0*(cord(j,i+1,2)+cord(j+1,i+1,2))) > hc(n,m)*1d3) then
+            ! basin guard (ARCHITECTURE §3.7): surface>0 uses surface-relative depth, <=0 falls back to absolute
+            if((max(cord(1,i+1,2),0.d0) - 0.5d0*(cord(j,i+1,2)+cord(j+1,i+1,2))) > hc(n,m)*1d3) then
                 jl = j
                 exit
             endif
