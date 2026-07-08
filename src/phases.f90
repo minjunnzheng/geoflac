@@ -22,11 +22,15 @@ integer, parameter :: kmetased = 17
 integer, parameter :: kdrymant = 18
 integer, parameter, dimension(5) :: mantle_phases = (/kmant1, kmant2, kserp, khydmant, kdrymant/)
 
-! Orogeny lithologies (no change_phase rules attached -- intentional; see ARCHITECTURE §3.2/§3.3)
-integer, parameter :: ksedrock = 20  ! sedimentary rock  (formerly borrowed 13 keclg)
-integer, parameter :: kschisto = 21  ! schist            (formerly borrowed 14 karc1)
-integer, parameter :: kultsch  = 22  ! ultra schist      (formerly borrowed 16 khydmant)
-integer, parameter :: kdecoll  = 23  ! decollement       (formerly borrowed 18 kdrymant)
-integer, parameter :: kbasemnt = 24  ! basement          (formerly borrowed 19)
+! Orogeny lithologies 20-27 (no change_phase rules attached -- intentional).
+! Full 12-19 -> 20-27 remap keeping the metamorphic pairs together (user scheme).
+integer, parameter :: ksediment = 20  ! sediment           (was 12 kweak)
+integer, parameter :: ksedrock  = 21  ! sedimentary rock   (was 13 keclg)
+integer, parameter :: kmeta1a   = 22  ! metamorphic rock 1 (was 14 karc1)
+integer, parameter :: kmeta1b   = 23  ! metamorphic rock 1 (was 15 kweakmc)
+integer, parameter :: kmeta2a   = 24  ! metamorphic rock 2 (was 16 khydmant)
+integer, parameter :: kmeta2b   = 25  ! metamorphic rock 2 (was 17 kmetased)
+integer, parameter :: kdecoll   = 26  ! decollement        (was 18 kdrymant)
+integer, parameter :: kbasemnt  = 27  ! basement           (was 19)
 
 end module phases
