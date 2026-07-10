@@ -97,9 +97,13 @@ def main(path, start=1, end=-1, thermochron=False, filtering=False, xlim=None, z
         max_markers = fl.nx * fl.nz * 32
         # chron_times stores the model time at which the marker cooled past its closure temperature.
         # Sentinel values: -1.0 = unclosed/open system, NaN = unreset (never heated enough to open).
-        chron_times = [np.full(max_markers + 1, -1.0, dtype=np.float32) for _ in range(nchron)]
+        # Initialized to NaN: a marker is unreset until it is first observed above closure temperature.
+        chron_times = [np.full(max_markers + 1, np.nan, dtype=np.float32) for _ in range(nchron)]
         # max_temp_history stores the maximum temperature (in °C) each marker has experienced in its lifetime.
         max_temp_history = np.full(max_markers + 1, -1.0, dtype=np.float32)
+        # Marker IDs already encountered in a previous frame; a marker appearing with an
+        # unseen ID was created mid-run (boundary influx, sedimentation, remesh refill).
+        seen = np.zeros(max_markers + 1, dtype=bool)
 
     # If computing thermochronology, we must start tracking from frame 1 to compile the correct history,
     # even if we only write output VTP files starting from the specified 'start' frame.
@@ -122,6 +126,50 @@ def main(path, start=1, end=-1, thermochron=False, filtering=False, xlim=None, z
                 t_rates = flac.marker_interpolate_node(ntriag, a1, a2, fl.nz, CR_nodes)
 
                 m_ids = ID.astype(np.int32)
+
+                # Initialize markers created mid-run (same rule as Fortran add_marker in
+                # geoflac-thermochron): interior markers inherit the majority chron state
+                # of the previously-seen markers in their element (mean closure time if the
+                # majority is reset); markers in the boundary element columns (material
+                # flowing in through the side walls) are unreset (NaN). Markers that are
+                # actually above closure temperature get reopened by the hot_mask below.
+                nez = fl.nz - 1
+                nex = fl.nx - 1
+                ntr = np.maximum(1, ntriag.astype(np.int64))
+                k_m = (ntr - 1) % 2 + 1
+                e_flat = (ntr - k_m) // 2  # 0-based element index, column-major over nez
+                i_el = e_flat // nez
+                new_mask = ~seen[m_ids]
+                if np.any(new_mask):
+                    old_mask = ~new_mask
+                    e_old = e_flat[old_mask]
+                    new_ids = m_ids[new_mask]
+                    e_new = e_flat[new_mask]
+                    new_boundary = (i_el[new_mask] == 0) | (i_el[new_mask] == nex - 1)
+                    nel = nez * nex
+                    for c in range(nchron):
+                        inherit = np.full(nel, np.nan)
+                        if np.any(old_mask):
+                            c_old = chron_times[c][m_ids[old_mask]]
+                            is_reset = c_old >= 0.0
+                            is_open = (c_old == -1.0)
+                            is_unreset = np.isnan(c_old)
+                            cnt_reset = np.zeros(nel)
+                            cnt_open = np.zeros(nel)
+                            cnt_unreset = np.zeros(nel)
+                            sum_reset = np.zeros(nel)
+                            np.add.at(cnt_reset, e_old[is_reset], 1.0)
+                            np.add.at(sum_reset, e_old[is_reset], c_old[is_reset])
+                            np.add.at(cnt_open, e_old[is_open], 1.0)
+                            np.add.at(cnt_unreset, e_old[is_unreset], 1.0)
+                            open_wins = (cnt_open > cnt_reset) & (cnt_open > cnt_unreset)
+                            reset_wins = (cnt_reset > 0) & (cnt_reset >= cnt_open) & (cnt_reset >= cnt_unreset)
+                            inherit[open_wins] = -1.0
+                            inherit[reset_wins] = sum_reset[reset_wins] / cnt_reset[reset_wins]
+                        vals = inherit[e_new].astype(np.float32)
+                        vals[new_boundary] = np.nan
+                        chron_times[c][new_ids] = vals
+                seen[m_ids] = True
 
                 # Update the historical maximum temperature for each active marker ID
                 max_temp_history[m_ids] = np.maximum(max_temp_history[m_ids], t_temps)
@@ -150,15 +198,11 @@ def main(path, start=1, end=-1, thermochron=False, filtering=False, xlim=None, z
                         cooling_rate_val = np.maximum(1e-10, -unclosed_rates)
                         t_closure = np.interp(cooling_rate_val, rates_ref, temps_ref)
 
-                        # Marker closes if its temperature is <= closure temperature and is valid
+                        # Marker closes if its temperature is <= closure temperature and is valid.
+                        # (Markers that were never above closure temperature stay NaN/unreset and
+                        # never enter this branch, so no frame-1 special case is needed.)
                         should_close = (unclosed_temps <= t_closure) & valid_temp
-                        if i == 1:
-                            # Frame 1: If it starts below the closure temperature, it was never reset
-                            # (initialized as NaN/unreset), otherwise it remains -1.0 (open/unclosed).
-                            c_times[unclosed_mask] = np.where(should_close, np.nan, -1.0)
-                        else:
-                            # Subsequent frames: If it cools past the closure temp, record the closure time.
-                            c_times[unclosed_mask] = np.where(should_close, t_frame, -1.0)
+                        c_times[unclosed_mask] = np.where(should_close, t_frame, -1.0)
 
                     # Save updated closure times back to the global history array
                     chron_times[c][m_ids] = c_times

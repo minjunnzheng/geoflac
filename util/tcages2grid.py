@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
-'''Interpolate marker thermochron ages onto grid elements and save them in grid VTS files.
+'''Average marker thermochron ages onto grid elements and save them in grid VTS files.
+
+Each element value is the arithmetic mean over all markers inside the element,
+with open-system markers counted as age 0 and unreset markers counted as
+age = model_time + 100 Myr (the unreset_time sentinel of the Fortran
+geoflac-thermochron implementation), reproducing its smooth chronage grids.
 '''
 
 from __future__ import print_function
@@ -9,13 +14,13 @@ import os
 import glob
 import xml.etree.ElementTree as ET
 import numpy as np
-import zlib
-import base64
 import io
-from scipy.interpolate import griddata
-import pandas as pd
 import flac
 import flac2vtk
+
+# Fortran geoflac-thermochron: unreset_time = -100 Myr, so an unreset marker
+# contributes age = model_time + 100 Myr to the element average.
+unreset_age_offset = 100.0
 
 def read_data_array(el):
     dtype_str = el.get("type", "Float32")
@@ -73,17 +78,6 @@ def interpolate_vtp_to_vts(vtp_path, vts_path):
     nx = nex + 1
     nz = nez + 1
     
-    # Get grid coordinates from VTS Points
-    points_el = vts_root.find(".//Points/DataArray")
-    points_data = read_data_array(points_el)
-    points_data = points_data.reshape((nz, nx, 3))
-    grid_x = points_data[:, :, 0]
-    grid_z = points_data[:, :, 1]
-    
-    # Calculate cell centers
-    xc = 0.25 * (grid_x[:-1, :-1] + grid_x[1:, :-1] + grid_x[:-1, 1:] + grid_x[1:, 1:])
-    zc = 0.25 * (grid_z[:-1, :-1] + grid_z[1:, :-1] + grid_z[:-1, 1:] + grid_z[1:, 1:])
-    
     # Check format of VTS data arrays
     first_da = vts_root.find(".//PointData/DataArray")
     if first_da is not None:
@@ -125,12 +119,12 @@ def interpolate_vtp_to_vts(vtp_path, vts_path):
             f.write(xml_str)
         return
 
-    # Extract marker coordinates
-    vtp_points_el = vtp_root.find(".//Points/DataArray")
-    vtp_points_data = read_data_array(vtp_points_el).reshape((nmarkers, 3))
-    x_markers = vtp_points_data[:, 0]
-    z_markers = vtp_points_data[:, 1]
-    
+    # Model time (Myr) of this frame, needed for the unreset sentinel age
+    time_el = vtp_root.find(".//FieldData/DataArray[@Name='TIME']")
+    if time_el is None:
+        raise ValueError("TIME field data not found in VTP!")
+    t_frame = float(time_el.text.strip())
+
     # Extract ntriag
     point_data_el = vtp_root.find(".//PointData")
     ntriag_el = None
@@ -149,67 +143,34 @@ def interpolate_vtp_to_vts(vtp_path, vts_path):
     k_m = (ntriag_clean - 1) % 2 + 1
     j_el = np.clip(((ntriag_clean - k_m) // 2) % (nz - 1), 0, nz - 2)
     i_el = np.clip(((ntriag_clean - k_m) // 2) // (nz - 1), 0, nx - 2)
-    
-    points = np.column_stack((x_markers, z_markers))
-    
+
     # Find all thermochronology systems (starting with age_ or max_temp)
     cell_data_el = vts_root.find(".//CellData")
     for da in point_data_el.findall("DataArray"):
         name = da.get("Name")
         if name and (name.startswith("age_") or name == "max_temp"):
             ages = read_data_array(da)
-            
-            # Determine state of each cell that contains markers
-            # Priority: Reset (0) > Unclosed (1) > Unreset (2)
-            has_reset = np.zeros((nez, nex), dtype=bool)
-            has_unclosed = np.zeros((nez, nex), dtype=bool)
-            has_unreset = np.zeros((nez, nex), dtype=bool)
-            
-            has_reset[j_el[ages > -0.5], i_el[ages > -0.5]] = True
-            has_unclosed[j_el[ages == -1.0], i_el[ages == -1.0]] = True
-            has_unreset[j_el[np.isnan(ages)], i_el[np.isnan(ages)]] = True
-            
-            elem_has_marker = has_reset | has_unclosed | has_unreset
-            
-            cell_state = np.zeros((nez, nex), dtype=np.int32)
-            cell_state[has_unreset] = 2
-            cell_state[has_unclosed] = 1
-            cell_state[has_reset] = 0
-            
-            # Interpolate state for cells that have no markers using nearest neighbor
-            points_with_marker = np.column_stack((xc[elem_has_marker], zc[elem_has_marker]))
-            states_with_marker = cell_state[elem_has_marker]
-            elem_state = griddata(points_with_marker, states_with_marker, (xc, zc), method='nearest')
-            
-            # Initialize elem_age to NaN
+
+            # Same scheme as out_thermochron_grid in the Fortran geoflac-thermochron:
+            # plain per-element mean over all markers, with the marker sentinels mapped
+            # to their Fortran-equivalent numeric ages first.
+            vals = ages.astype(np.float64)
+            if name != "max_temp":
+                vals[ages == -1.0] = 0.0                            # open system: closure time ~ now
+                vals[np.isnan(ages)] = t_frame + unreset_age_offset  # unreset
+
+            sum2d = np.zeros((nez, nex))
+            cnt2d = np.zeros((nez, nex))
+            np.add.at(sum2d, (j_el, i_el), vals)
+            np.add.at(cnt2d, (j_el, i_el), 1.0)
+
+            # Elements without markers are NaN (the Fortran code writes 0.0 there,
+            # but 0.0 would be indistinguishable from a real zero age).
             elem_age = np.full((nez, nex), np.nan, dtype=np.float32)
-            
-            # For elements that are unclosed (State 1), set to -1.0
-            elem_age[elem_state == 1] = -1.0
-            
-            # For elements that are reset (State 0), interpolate the actual ages
-            reset_mask = (elem_state == 0)
-            if np.any(reset_mask):
-                ages_reset = ages[ages > -0.5]
-                points_reset = points[ages > -0.5]
-                if len(ages_reset) > 0:
-                    ages_interp = griddata(points_reset, ages_reset, (xc, zc), method='linear')
-                    
-                    # Fill any NaNs in the linear interpolation (e.g. outside convex hull)
-                    # using nearest neighbor interpolation of the ages
-                    nan_in_interp = np.isnan(ages_interp)
-                    if np.any(nan_in_interp):
-                        ages_nearest = griddata(points_reset, ages_reset, (xc, zc), method='nearest')
-                        ages_interp[nan_in_interp] = ages_nearest[nan_in_interp]
-                    
-                    elem_age[reset_mask] = ages_interp[reset_mask]
-                else:
-                    elem_age[reset_mask] = -1.0
-                    
-            # Mask out elements if they do not contain any markers
-            elem_age[~elem_has_marker] = np.nan
-                
-            new_da = make_vts_dataarray_element(elem_age.astype(np.float32), name, format_type)
+            has_marker = cnt2d > 0
+            elem_age[has_marker] = (sum2d[has_marker] / cnt2d[has_marker]).astype(np.float32)
+
+            new_da = make_vts_dataarray_element(elem_age, name, format_type)
             
             # Update/Insert into CellData of VTS
             found = False
@@ -233,7 +194,7 @@ def main(args):
     doc = '''usage: tcages2grid.py path [frame_min [frame_max]]
        tcages2grid.py vtp_file vts_file
 
-Interpolate marker thermochron ages onto grid elements and save them in grid VTS files.
+Average marker thermochron ages onto grid elements and save them in grid VTS files.
 '''
     if len(args) < 1:
         print(doc)
