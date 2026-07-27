@@ -11,9 +11,7 @@ subroutine fl_flexure
     double precision :: cord_old_z, w_winkler_1, w_winkler_nx
     integer :: i, j, iph, bc_idx
     double precision :: a_i, c_i, b_i
-    ! width (in nodes beyond the wall) of the band remesh re-stamps with
-    ! pristine incoming stratigraphy; must match idist in remesh.f90
-    integer, parameter :: nqref = 3
+    double precision :: qref(nx)
 
     ! 1. Scan for the flexural boundary condition (nbc = 200) on side 2 (bottom)
     bc_idx = 0
@@ -41,37 +39,40 @@ subroutine fl_flexure
         q_init = q
     endif
 
-    ! Fix F (material-following load reference).  q_init is the column weight
-    ! the plate is in equilibrium with; it is a property of the MATERIAL, not
-    ! of the mesh column.  Lithosphere entering through a conveyor boundary
-    ! arrives in isostatic equilibrium, so it must carry its own reference
-    ! weight in with it.  Refresh the reference over the band that remesh
-    ! re-stamps with pristine incoming stratigraphy (idist=2 -> elements
-    ! 1..3 / nx-3..nx-1, i.e. nodes 1..1+nqref / nx-nqref..nx); rem_q_init
-    ! then transports it inward on every rezoning, exactly like the phases.
+    ! Fix F (material-following load reference).
     !
-    ! Without this the initial LATERAL density contrast between the injected
-    ! column and the interior columns is advected across the mesh and shows up
-    ! as a travelling load.  Measured on taiwan_a g76_r000: incoming column
-    ! 869.0 MPa vs interior 825.0 MPa = 44.0 MPa step at x=230 km, i.e.
-    ! 1.33 km of spurious Airy subsidence propagating west at the convergence
-    ! rate (trough observed at x = 230 - v*t to within 5 km at t=2/4/6/8).
-    if (incoming_left .eq. 1) then
-        do i = 1, min(1 + nqref, nx)
-            q_init(i) = q(i)
-        enddo
-    endif
-    if (incoming_right .eq. 1) then
-        do i = max(nx - nqref, 1), nx
-            q_init(i) = q(i)
-        enddo
-    endif
+    ! q_init is the column weight the plate is in equilibrium with.  It is a
+    ! property of the MATERIAL, not of the mesh column: a lithospheric column
+    ! floating in isostatic equilibrium far from the orogen must arrive at the
+    ! deformation front carrying zero load anomaly, however far it has
+    ! travelled.  q_init is captured once at t=0, so it is a reference indexed
+    ! by ORIGINAL material position -- but it was being subtracted at the
+    ! CURRENT mesh position.  In a conveyor run those are not the same place:
+    ! rem_cord restores the x-grid to [x0, x0+rxbo] at every rezoning
+    ! (rem_cord.f90, mode_rem=3/11), so the mesh is Eulerian and the material
+    ! streams through it.  Any lateral density contrast in the initial
+    ! condition is then re-read as a load that travels at the convergence
+    ! rate.  Measured on taiwan_a g76_r000: the injected eastern column is
+    ! 869.0 MPa against 825.0 MPa for the interior columns it replaces, and
+    ! that 44.0 MPa step drives 1.33 km of spurious Airy subsidence whose
+    ! front tracks x = 230 - v*t.
+    !
+    ! Map the reference through xoriginal, which already carries each node's
+    ! original material x and is itself rezoned by remesh (rem_interpolate,
+    ! remesh.f90).  Use the surface row: side-2 is velx=0 so the bottom row
+    ! does not advect at all, while the surface tracks the upper crust the
+    ! side velx BC drives -- and the whole 44.0 MPa contrast lives in the top
+    ! 21 km (below that both columns are phase 27).  Material injected at a
+    ! conveyor wall carries xoriginal clamped to the domain edge, so it picks
+    ! up the incoming column's own weight and enters unloaded, which is the
+    ! physically correct boundary behaviour and needs no separate hack.
+    call flexure_qref(qref)
 
     ! Compute excess load
     !$ACC parallel loop async(1)
     !$OMP parallel do
     do i = 1, nx
-        Load(i) = q(i) - q_init(i)
+        Load(i) = q(i) - qref(i)
     enddo
 
     ! 4. Set up grid coordinates and spacings in X
@@ -204,55 +205,40 @@ subroutine fl_flexure
 end subroutine fl_flexure
 
 
-subroutine rem_q_init
-    ! Fix F, part 2: transport the flexural load reference across a rezoning.
-    !
-    ! Between remeshings the mesh is Lagrangian, so q_init(i) -- being index-
-    ! attached -- travels with its material for free.  A remesh breaks that:
-    ! every other field is interpolated from the old mesh onto the new one
-    ! (rem_interpolate), but q_init was never in that list, so it stayed
-    ! pinned to the node index while the material slid out from under it.
-    ! In a conveyor run that silently freezes the reference in the Eulerian
-    ! frame, which is what turns an advected lateral density contrast into a
-    ! travelling load.
-    !
-    ! Interpolate along the SURFACE row, not the bottom.  The bottom boundary
-    ! carries velx=0 (side-2 nbc=10, a=0), so cordo(nz,:,1) == cord(nz,:,1)
-    ! and a bottom-row remap is the identity map -- it transports nothing
-    ! (measured: the 44 MPa step artifact survived a bottom-row remap intact).
-    ! The material that moves, and that carries the density contrast, is the
-    ! upper crust driven by the side velx BC, whose motion the surface row
-    ! tracks.  Same row the surface accumulators dhacc/extr_acc are remapped
-    ! on in remesh.f90.
+subroutine flexure_qref(qref)
+    ! Fix F helper: the load reference evaluated at each column's CURRENT
+    ! position, by mapping the t=0 reference q_init through xoriginal.
+    ! Kept in one place so fl_flexure and flexure_report cannot disagree.
     use arrays
     use params
     implicit none
-    double precision :: qold(nx), xo(nx), xn(nx), t
-    integer :: i, k
+    double precision, intent(out) :: qref(nx)
+    double precision :: xr, tfrac
+    integer :: i, klo, khi, kmid
 
-    if (all(q_init .eq. 0.d0)) return   ! flexure not active yet
-
-    qold = q_init
     do i = 1, nx
-        xo(i) = cordo(1, i, 1)
-        xn(i) = cord(1, i, 1)
-    enddo
-
-    k = 1
-    do i = 1, nx
-        if (xn(i) .le. xo(1)) then
-            q_init(i) = qold(1)
-        elseif (xn(i) .ge. xo(nx)) then
-            q_init(i) = qold(nx)
+        xr = xoriginal(1, i)
+        if (xr .le. cord(nz, 1, 1)) then
+            qref(i) = q_init(1)
+        elseif (xr .ge. cord(nz, nx, 1)) then
+            qref(i) = q_init(nx)
         else
-            do while (k .lt. nx-1 .and. xo(k+1) .lt. xn(i))
-                k = k + 1
+            klo = 1
+            khi = nx
+            do while (khi - klo .gt. 1)         ! bisection: grid may be zoned
+                kmid = (klo + khi) / 2
+                if (cord(nz, kmid, 1) .gt. xr) then
+                    khi = kmid
+                else
+                    klo = kmid
+                endif
             enddo
-            t = (xn(i) - xo(k)) / max(xo(k+1) - xo(k), 1.d-30)
-            q_init(i) = qold(k) + t * (qold(k+1) - qold(k))
+            tfrac = (xr - cord(nz, klo, 1)) / &
+                    max(cord(nz, khi, 1) - cord(nz, klo, 1), 1.d-30)
+            qref(i) = q_init(klo) + tfrac * (q_init(khi) - q_init(klo))
         endif
     enddo
-end subroutine rem_q_init
+end subroutine flexure_qref
 
 
 subroutine flexure_report
@@ -263,7 +249,7 @@ subroutine flexure_report
     use arrays
     use params
     implicit none
-    double precision :: q(nx), Load(nx), w(nx)
+    double precision :: q(nx), Load(nx), w(nx), qref(nx)
     integer :: i, bc_idx, imax
     logical, save :: first = .true.
 
@@ -278,8 +264,9 @@ subroutine flexure_report
     if (all(q_init .eq. 0.d0)) return
 
     call get_column_weights(q)
+    call flexure_qref(qref)
     do i = 1, nx
-        Load(i) = q(i) - q_init(i)
+        Load(i) = q(i) - qref(i)
         w(i) = zoriginal(nz, i) - cord(nz, i, 2)
     enddo
 
@@ -304,7 +291,7 @@ subroutine flexure_report
     write (78, '(A,F10.5)') '# t_Myr= ', time/sec_year/1.d6
     do i = 1, nx
         write (78, '(5(1PE14.6))') cord(nz, i, 1)/1.d3, q(i)/1.d6, &
-            q_init(i)/1.d6, Load(i)/1.d6, w(i)
+            qref(i)/1.d6, Load(i)/1.d6, w(i)
     enddo
     close (78)
 
