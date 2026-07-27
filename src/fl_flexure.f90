@@ -214,8 +214,16 @@ subroutine rem_q_init
     ! pinned to the node index while the material slid out from under it.
     ! In a conveyor run that silently freezes the reference in the Eulerian
     ! frame, which is what turns an advected lateral density contrast into a
-    ! travelling load.  Interpolate it here, along the bottom row (q_init is
-    ! a per-column quantity and fl_flexure indexes its grid by cord(nz,i,1)).
+    ! travelling load.
+    !
+    ! Interpolate along the SURFACE row, not the bottom.  The bottom boundary
+    ! carries velx=0 (side-2 nbc=10, a=0), so cordo(nz,:,1) == cord(nz,:,1)
+    ! and a bottom-row remap is the identity map -- it transports nothing
+    ! (measured: the 44 MPa step artifact survived a bottom-row remap intact).
+    ! The material that moves, and that carries the density contrast, is the
+    ! upper crust driven by the side velx BC, whose motion the surface row
+    ! tracks.  Same row the surface accumulators dhacc/extr_acc are remapped
+    ! on in remesh.f90.
     use arrays
     use params
     implicit none
@@ -226,8 +234,8 @@ subroutine rem_q_init
 
     qold = q_init
     do i = 1, nx
-        xo(i) = cordo(nz, i, 1)
-        xn(i) = cord(nz, i, 1)
+        xo(i) = cordo(1, i, 1)
+        xn(i) = cord(1, i, 1)
     enddo
 
     k = 1
@@ -290,6 +298,15 @@ subroutine flexure_report
         cord(nz, maxloc(w, 1), 1)/1.d3, maxval(w), &
         Load(1)/1.d6, Load(nx)/1.d6
     close (77)
+
+    ! full profiles, so the reference itself can be audited rather than inferred
+    open (78, file='flexure_prof.dat', status='unknown', position='append')
+    write (78, '(A,F10.5)') '# t_Myr= ', time/sec_year/1.d6
+    do i = 1, nx
+        write (78, '(5(1PE14.6))') cord(nz, i, 1)/1.d3, q(i)/1.d6, &
+            q_init(i)/1.d6, Load(i)/1.d6, w(i)
+    enddo
+    close (78)
 
     write (6, '(A,F7.3,A,F9.2,A,F8.1,A,F9.1,A,F8.1)') &
         ' [flexure] t=', time/sec_year/1.d6, ' Myr  Load_max=', Load(imax)/1.d6, &
