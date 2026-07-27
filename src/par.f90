@@ -56,6 +56,7 @@ else ! file does not exist - new start
     ! Output of initial configuration
     call outflac
     call outmarker
+    call flexure_report
 end if
 
 
@@ -109,6 +110,7 @@ do while( time .le. time_max )
     if( dtacc_file .gt. dtout_file ) then
       call outflac
       call outmarker
+      call flexure_report
       dtacc_file = 0
     endif
   endif

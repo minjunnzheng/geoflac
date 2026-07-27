@@ -17,6 +17,10 @@ cordo(:,:,:) = cord(:,:,:)
 ! Create The New grid (cord) using cordo(nz,i,2) for the bottom and cordo(1,i,2) for the surface
 call rem_cord
 
+! Fix F: the flexural load reference is a material property and must be
+! rezoned with everything else (see rem_q_init in fl_flexure.f90).
+call rem_q_init
+
 
 
 !$ACC kernels async(1)
