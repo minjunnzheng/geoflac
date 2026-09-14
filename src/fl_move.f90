@@ -234,6 +234,14 @@ if( topo_kappa .gt. 0.d0 ) then
         enddo
     endif
 
+    ! re-apply no-deposition after lithology erosion: the ert term is positive where cord(1,i,2)<0
+    if (inodep == 1) then
+        !$ACC parallel loop async(1)
+        do i = 1, nx
+            dtopo(i) = min(dtopo(i), 0.d0)
+        enddo
+    endif
+
     ! accumulated topo change since last resurface
     !$ACC wait(1)
     !$ACC parallel loop async(2)
