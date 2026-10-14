@@ -444,6 +444,14 @@ def parse_inp(clean_lines, date):
         tokens = get_tokens('surf_inodep_iwind')
         inodep, iwind = int(tokens[0]), int(tokens[1])
         wind_factor, wind_taper = float(tokens[2]), int(tokens[3])
+        # optional 5th/6th columns: ifluv fluv_K(1/yr) (stream-power erosion);
+        # flac accepts exactly 4 or 6 fields. fluv_K is kept as its original text.
+        if len(tokens) == 6:
+            ifluv, fluv_K = int(tokens[4]), tokens[5]
+        elif len(tokens) == 4:
+            ifluv, fluv_K = None, None
+        else:
+            raise ValueError(f"windward line must have 4 or 6 fields, got {len(tokens)}: {tokens}")
         tokens = get_tokens('surf_nert')
         nert_class, ert_default = int(tokens[0]), float(tokens[1])
         ert_classes = []
@@ -453,6 +461,7 @@ def parse_inp(clean_lines, date):
             ert_classes.append((ev, [int(x) for x in tk[2:2 + nph]]))
     else:
         inodep, iwind, wind_factor, wind_taper = 0, 0, 1.0, 0
+        ifluv, fluv_K = None, None
         nert_class, ert_default, ert_classes = 0, 0.0, []
 
     # 11. Process control
@@ -548,7 +557,7 @@ def parse_inp(clean_lines, date):
         'weaken_ratio_viscous': weaken_ratio_viscous, 'ny_rem': ny_rem, 'mode_rem': mode_rem,
         'ntest_rem': ntest_rem, 'angle_rem': angle_rem, 'dx_rem': dx_rem, 'topo_kappa': topo_kappa,
         'fac_kappa': fac_kappa, 'inodep': inodep, 'iwind': iwind, 'wind_factor': wind_factor,
-        'wind_taper': wind_taper, 'nert_class': nert_class, 'ert_default': ert_default,
+        'wind_taper': wind_taper, 'ifluv': ifluv, 'fluv_K': fluv_K, 'nert_class': nert_class, 'ert_default': ert_default,
         'ert_classes': ert_classes,
         'idt_scale': idt_scale, 'dt_scale': dt_scale, 'tolerance': tolerance,
         'i_rey': i_rey, 'xReyn': xReyn, 'ifreq_rmasses': if_rmasses, 'ifreq_imasses': if_imasses,
@@ -772,8 +781,10 @@ def write_new_inp(data, comments_map, final_comments, filename):
                    default_preceding=[(False, "; topo diffusivity and amplification factor")])
 
         # orogen orthogonal surface-process block (all-off default preserves upstream behaviour)
-        write_line('surf_inodep_iwind',
-                   f"{data['inodep']}  {data['iwind']}  {data['wind_factor']}  {data['wind_taper']}",
+        surf_wind = f"{data['inodep']}  {data['iwind']}  {data['wind_factor']}  {data['wind_taper']}"
+        if data.get('ifluv') is not None:
+            surf_wind += f"  {data['ifluv']}  {data['fluv_K']}"
+        write_line('surf_inodep_iwind', surf_wind,
                    default_preceding=[(False, "; Surface processes (ARCHITECTURE orogen)"),
                                      (False, "; inodep(1=no deposition)  iwind(0/1=west,2=east)  wind_factor  wind_taper")])
         write_line('surf_nert',
