@@ -6,6 +6,11 @@ use params
 include 'precision.inc'
 
 character*200 inputfile
+! windward line parser (fluvial stream-power columns 5-6)
+character(len=512) :: wbuf
+character(len=1) :: wch
+integer :: ntok, kc, lb
+logical :: intok, fieldhas, badcomma
 
 iu = 4
 open( iu, file=inputfile )
@@ -275,9 +280,67 @@ line = line + 1
 
 ! Surface processes: orthogonal switches (ARCHITECTURE §3.5)
 ! inodep(1=no deposition)  iwind(0/1=windward left/west,2=right/east)  wind_factor  wind_taper
+!   [ifluv(0/1 stream-power fluvial erosion)  fluv_K(1/yr)]   -- optional 5th/6th columns
+! Exactly 4 or 6 fields are accepted; anything else stops, so a malformed fluvial
+! setting can never be silently read as "off".
 call AdvanceToNextInputLine(4, line)
-read(4,*,err=1000) inodep, iwind, wind_factor, wind_taper
+read(4,'(a)',err=1000) wbuf
 line = line + 1
+kc = index(wbuf, ';')
+if (kc > 0) wbuf(kc:) = ' '
+do kc = 1, len(wbuf)
+    if (wbuf(kc:kc) == char(9)) wbuf(kc:kc) = ' '
+enddo
+if (index(wbuf,'/') > 0 .or. index(wbuf,'*') > 0) then
+    call SysMsg('read_params: windward line must not contain "/" or "*"')
+    print *, 'read_params: windward line must not contain "/" or "*" (line', line-1, ')'
+    stop 12
+endif
+lb = len_trim(wbuf)
+ntok = 0
+intok = .false.
+fieldhas = .false.
+badcomma = .false.
+do kc = 1, lb
+    wch = wbuf(kc:kc)
+    if (wch == ',') then
+        if (.not. fieldhas) badcomma = .true.
+        fieldhas = .false.
+        intok = .false.
+    else if (wch == ' ') then
+        intok = .false.
+    else
+        if (.not. intok) ntok = ntok + 1
+        intok = .true.
+        fieldhas = .true.
+    endif
+enddo
+if (lb > 0) then
+    if (wbuf(lb:lb) == ',') badcomma = .true.
+endif
+if (badcomma) then
+    call SysMsg('read_params: windward line has an empty comma-separated field')
+    print *, 'read_params: windward line has an empty comma-separated field (line', line-1, ')'
+    stop 12
+endif
+if (ntok == 4) then
+    read(wbuf,*,err=1000) inodep, iwind, wind_factor, wind_taper
+    ifluv = 0
+    fluv_K = 0.d0
+else if (ntok == 6) then
+    ifluv = -999
+    fluv_K = -1.d0
+    read(wbuf,*,err=1000) inodep, iwind, wind_factor, wind_taper, ifluv, fluv_K
+    if (ifluv == -999 .or. fluv_K == -1.d0) then
+        call SysMsg('read_params: windward line ifluv/fluv_K not assigned')
+        print *, 'read_params: windward line ifluv/fluv_K not assigned (line', line-1, ')'
+        stop 12
+    endif
+else
+    call SysMsg('read_params: windward line must have 4 or 6 fields')
+    print *, 'read_params: windward line must have 4 or 6 fields, got', ntok, ' (line', line-1, ')'
+    stop 12
+endif
 ! lithology-dependent erosion:  nert_class  ert_default   (0  0.0 = off)
 call AdvanceToNextInputLine(4, line)
 read(4,*,err=1000) nert_class, ert_default
@@ -289,6 +352,29 @@ endif
 if (nert_class < 0 .or. nert_class > 10) then
     call SysMsg('read_params: nert_class must be 0..10')
     stop
+endif
+if (ifluv < 0 .or. ifluv > 1) then
+    call SysMsg('read_params: ifluv must be 0 or 1')
+    print *, 'read_params: ifluv must be 0 or 1, got', ifluv
+    stop 12
+endif
+if (ifluv == 1) then
+    if (fluv_K <= 0.d0) then
+        call SysMsg('read_params: ifluv=1 requires fluv_K > 0')
+        print *, 'read_params: ifluv=1 requires fluv_K > 0, got', fluv_K
+        stop 12
+    endif
+    ! stream power and diffusion / lithology erosion are mutually exclusive
+    if (topo_kappa /= 0.d0) then
+        call SysMsg('read_params: ifluv=1 requires topo_kappa = 0 (exclusive with diffusion)')
+        print *, 'read_params: ifluv=1 requires topo_kappa = 0 (exclusive with diffusion), got', topo_kappa
+        stop 12
+    endif
+    if (nert_class /= 0) then
+        call SysMsg('read_params: ifluv=1 requires nert_class = 0 (exclusive with lithology erosion)')
+        print *, 'read_params: ifluv=1 requires nert_class = 0 (exclusive with lithology erosion), got', nert_class
+        stop 12
+    endif
 endif
 do k = 1, nert_class
     call AdvanceToNextInputLine(4, line)
@@ -303,7 +389,8 @@ enddo
 
 ! preflight: echo effective surface-process values (ARCHITECTURE §3.8)
 write(6,*) 'Surface: kappa=',topo_kappa,' inodep=',inodep,' iwind=',iwind, &
-    ' wf=',wind_factor,' taper=',wind_taper,' nert=',nert_class,' ert0=',ert_default
+    ' wf=',wind_factor,' taper=',wind_taper,' nert=',nert_class,' ert0=',ert_default, &
+    ' ifluv=',ifluv,' Kf(1/yr)=',fluv_K
 do k = 1, nert_class
     write(6,*) '  ert class',k,': ert=',ert_val(k),' phases=',(ert_ph(k,m),m=1,nert_ph(k))
 enddo

@@ -35,7 +35,8 @@ integer :: nx,nz,nzonx,nzony,nelz_x(maxzone),nelz_y(maxzone), &
      incoming_left,incoming_right, &
      ivis_present,idt_scale,ifreq_imasses,ifreq_rmasses, &
      nloop,ifreq_avgsr,nsrate, &
-     inodep,iwind,wind_taper,nert_class,nert_ph(10),ert_ph(10,10)
+     inodep,iwind,wind_taper,nert_class,nert_ph(10),ert_ph(10,10), &
+     ifluv
 
 !$ACC declare create(nx,nz,nzonx,nzony,nelz_x(maxzone),nelz_y(maxzone), &
 !$ACC     ny_rem,mode_rem,ntest_rem,ivis_shape, &
@@ -60,7 +61,8 @@ integer :: nx,nz,nzonx,nzony,nelz_x(maxzone),nelz_y(maxzone), &
 !$ACC     incoming_left,incoming_right, &
 !$ACC     ivis_present,idt_scale,ifreq_imasses,ifreq_rmasses, &
 !$ACC     nloop,ifreq_avgsr,nsrate, &
-!$ACC     inodep,iwind,wind_taper,nert_class,nert_ph,ert_ph)
+!$ACC     inodep,iwind,wind_taper,nert_class,nert_ph,ert_ph, &
+!$ACC     ifluv)
 
 real*8 :: x0,z0,rxbo,rzbo,sizez_x(maxzone),sizez_y(maxzone), &
      dx_rem,angle_rem,topo_kappa,fac_kappa, &
@@ -90,7 +92,8 @@ real*8 :: x0,z0,rxbo,rzbo,sizez_x(maxzone),sizez_y(maxzone), &
      weaken_ratio_plastic,weaken_ratio_viscous, &
      dtavg, &
      time,dt,time_max, &
-     wind_factor,ert_default,ert_val(10)
+     wind_factor,ert_default,ert_val(10), &
+     fluv_K
 
 !$ACC declare create(x0,z0,rxbo,rzbo,sizez_x(maxzone),sizez_y(maxzone), &
 !$ACC     dx_rem,angle_rem,topo_kappa,fac_kappa, &
@@ -120,7 +123,8 @@ real*8 :: x0,z0,rxbo,rzbo,sizez_x(maxzone),sizez_y(maxzone), &
 !$ACC     weaken_ratio_plastic,weaken_ratio_viscous, &
 !$ACC     dtavg, &
 !$ACC     time,dt,time_max, &
-!$ACC     wind_factor,ert_default,ert_val)
+!$ACC     wind_factor,ert_default,ert_val, &
+!$ACC     fluv_K)
 
 character phasefile*20,tempfile*20,coordfile*20
 

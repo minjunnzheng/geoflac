@@ -37,7 +37,7 @@ enddo
 call fl_flexure
 
 ! Diffuse topography
-if( topo_kappa.gt.0.d0) call diff_topo
+if( topo_kappa.gt.0.d0 .or. ifluv.eq.1) call diff_topo
 
 
 !$OMP parallel private(i,j,k,a,b,c,xcord,ycord,xvel,yvel, &
@@ -143,6 +143,9 @@ include 'precision.inc'
 ! explicit types: topo_max_idx would default to real*8 (starts with 't') under precision.inc
 integer :: iph, kcl, m, topo_max_idx
 double precision :: ert, topo_max, wfac
+! stream-power fluvial erosion (ifluv==1)
+integer :: idiv, idn, nsub, isub, nclamp
+double precision :: fkps, xdiv, xlen, slope, dxd, cmax, dts, hfloor, hnew, emaxl, emaxr, erate
 
 !EROSION PROCESSES
 if( topo_kappa .gt. 0.d0 ) then
@@ -255,6 +258,121 @@ if( topo_kappa .gt. 0.d0 ) then
     enddo
 endif
 
+! Stream-power fluvial erosion, Willett (1999) linear form  e = K_side * L * |S|  (m=n=1).
+! Mutually exclusive with diffusion and lithology erosion (read_params enforces
+! topo_kappa=0 and nert_class=0), so the block above never runs together with this one.
+!   divide idiv = global highest surface node; L = |x_i - x_div|; S = downstream one-sided slope
+!   K_side = fluv_K (1/yr -> 1/s), times wind_factor (with wind_taper) on the windward side,
+!   same node set and taper as the diffusion windward loop above.
+!   Erosion only (no deposition), only where h > 0 and S > 0; end nodes and divide get 0.
+!   Overshoot guard: h_new(i) >= max(h_old(down), 0) within each substep.
+if (ifluv == 1) then
+    !$ACC wait(1)
+    !$ACC update self(cord)
+    fkps = fluv_K / sec_year
+    do i = 1, nx
+        htmp(i) = cord(1,i,2)
+        stmpn(i) = fkps
+    enddo
+    topo_max = -1.d30
+    idiv = 1
+    do i = 1, nx
+        if (htmp(i) > topo_max) then
+            topo_max = htmp(i)
+            idiv = i
+        endif
+    enddo
+    xdiv = cord(1,idiv,1)
+    if (iwind == 1) then
+        do i = 2, idiv
+            wfac = wind_factor
+            if (wind_taper > 0) wfac = 1.d0 + (wind_factor-1.d0) * &
+                min(1.d0, dble(idiv-i)/dble(wind_taper))
+            stmpn(i) = stmpn(i) * wfac
+        enddo
+    else if (iwind == 2) then
+        do i = idiv, nx-1
+            wfac = wind_factor
+            if (wind_taper > 0) wfac = 1.d0 + (wind_factor-1.d0) * &
+                min(1.d0, dble(i-idiv)/dble(wind_taper))
+            stmpn(i) = stmpn(i) * wfac
+        enddo
+    endif
+
+    ! substeps: C_max = max K_side*L*dt/dx_down over interior non-divide nodes
+    cmax = 0.d0
+    do i = 2, nx-1
+        if (i == idiv) cycle
+        if (i < idiv) then
+            dxd = cord(1,i,1) - cord(1,i-1,1)
+        else
+            dxd = cord(1,i+1,1) - cord(1,i,1)
+        endif
+        xlen = abs(cord(1,i,1) - xdiv)
+        cmax = max(cmax, stmpn(i) * xlen * dt / dxd)
+    enddo
+    nsub = max(1, ceiling(cmax / 0.5d0))
+    dts = dt / dble(nsub)
+
+    nclamp = 0
+    do isub = 1, nsub
+        do i = 1, nx
+            hold(i) = htmp(i)
+        enddo
+        do i = 2, nx-1
+            if (i == idiv) cycle
+            if (hold(i) <= 0.d0) cycle
+            if (i < idiv) then
+                idn = i - 1
+                slope = (hold(i) - hold(idn)) / (cord(1,i,1) - cord(1,idn,1))
+            else
+                idn = i + 1
+                slope = (hold(i) - hold(idn)) / (cord(1,idn,1) - cord(1,i,1))
+            endif
+            if (slope <= 0.d0) cycle
+            xlen = abs(cord(1,i,1) - xdiv)
+            hnew = hold(i) - stmpn(i) * xlen * slope * dts
+            hfloor = max(hold(idn), 0.d0)
+            if (hnew < hfloor) then
+                hnew = hfloor
+                nclamp = nclamp + 1
+            endif
+            htmp(i) = hnew
+        enddo
+    enddo
+
+    do i = 1, nx
+        dtopo(i) = htmp(i) - cord(1,i,2)
+    enddo
+
+    if (mod(nloop, ifreq_avgsr) .eq. 0) then
+        emaxl = 0.d0
+        emaxr = 0.d0
+        do i = 1, nx
+            erate = -dtopo(i) / dt * sec_year * 1.d3   ! mm/yr
+            if (i < idiv) emaxl = max(emaxl, erate)
+            if (i > idiv) emaxr = max(emaxr, erate)
+        enddo
+        write(6,'(a,i10,a,f12.6,a,f12.4,a,es12.4,a,es12.4,a,i6,a,i8)') ' Fluvial diag: nloop=', nloop, &
+            ' t(Myr)=', time/sec_year/1.d6, ' xdiv(km)=', xdiv*1.d-3, &
+            ' emax_left(mm/yr)=', emaxl, ' emax_right(mm/yr)=', emaxr, &
+            ' nsub=', nsub, ' nclamp=', nclamp
+    endif
+    !$ACC update device(dtopo)
+
+    ! accumulated topo change since last resurface (same as the diffusion branch)
+    !$ACC wait(1)
+    !$ACC parallel loop async(2)
+    do i = 1, nx-1
+        dhacc(i) = dhacc(i) + 0.5d0 * (dtopo(i) + dtopo(i + 1))
+    enddo
+
+    !$ACC parallel loop async(1)
+    do i = 1, nx
+        cord(1,i,2) = cord(1,i,2) + dtopo(i)
+    enddo
+endif
+
 ! magma extrusion
 arc_extrusion_rate = 1.d0 - ratio_mantle_mzone
 if (arc_extrusion_rate > 0) then
@@ -280,7 +398,7 @@ if (arc_extrusion_rate > 0) then
 endif
 
 ! adjust markers
-if (topo_kappa > 0 .or. arc_extrusion_rate > 0) then
+if (topo_kappa > 0 .or. arc_extrusion_rate > 0 .or. ifluv == 1) then
     if(mod(nloop, ifreq_avgsr) .eq. 0) then
 !!$        print *, 'max sed/erosion rate (m/yr):' &
 !!$             , maxval(dtopo(1:nx)) * 3.16d7 / dt &

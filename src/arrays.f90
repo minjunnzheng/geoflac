@@ -15,7 +15,7 @@ module arrays
       nopbou(:,:), ncodbou(:,:), jmoho(:)
 
   double precision, allocatable :: phase_ratio(:,:,:), &
-      dtopo(:), dhacc(:), extrusion(:), &
+      dtopo(:), dhacc(:), extrusion(:), htmp(:), hold(:), &
       fmelt(:,:), fmagma(:,:), extr_acc(:), &
       strainr(:,:,:,:), flux(:,:,:,:), &
       aps(:,:),visn(:,:),e2sr(:,:), &
@@ -64,6 +64,8 @@ contains
 
     allocate(phase_ratio(nphase, nz-1, nx-1))
     allocate(dtopo(nx))
+    allocate(htmp(nx))
+    allocate(hold(nx))
     allocate(dhacc(nx-1))
     allocate(extrusion(nx-1))
     allocate(fmelt(nz-1, nx-1))
