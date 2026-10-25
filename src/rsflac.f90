@@ -85,7 +85,7 @@ open (1,file='xoriginal.rs',access='direct',recl=nwords*kindr)
 read (1,rec=nrec) xoriginal
 close (1)
 open (1,file='zoriginal.rs',access='direct',recl=nwords*kindr)
-read (1,rec=nrec) xoriginal
+read (1,rec=nrec) zoriginal
 close (1)
 
 ! 2-D (nx-1)*(nz-1) arrays - elements defined
